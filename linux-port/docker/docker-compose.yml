@@ -62,11 +62,13 @@ services:
       # Runs once, when db-data is empty, and never again.
       - ./mariadb/initdb.d:/docker-entrypoint-initdb.d:ro
 
-    # Deliberately NOT published to the host. Nothing outside this compose
-    # network has any business reaching the database. To inspect it, use
+    # Bound to 127.0.0.1 by default, so it reaches this machine and nothing
+    # else on the network -- the same rule every other port in this file
+    # follows. To inspect it from here:
     #     docker compose exec mariadb mariadb -uroot -p
-    expose:
-      - "3306"
+    # or, with a client on the host, mariadb -h127.0.0.1 -P${M2_DB_PUBLIC_PORT:-3306} -uroot -p
+    ports:
+      - "${M2_DB_PUBLIC_BIND:-127.0.0.1}:${M2_DB_PUBLIC_PORT:-3306}:3306/tcp"
 
     healthcheck:
       # healthcheck.sh ships with the mariadb image. --connect proves the

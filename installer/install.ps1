@@ -1357,6 +1357,31 @@ function Get-Stack {
         Write-Say 'either way.'
         Write-Say ''
 
+        # A local checkout (install-local.ps1) has no meaningful "published
+        # version" to compare against -- $script:RepoDir points at disk you
+        # are actively editing, not at a tagged release. Comparing it to
+        # GitHub's main branch would tell you nothing about your own changes,
+        # and answering "re-apply settings" alone never re-copies the build
+        # context -- see the fall-through below -- so an edit made here (a
+        # docker-compose.yml port, say) would silently never reach the
+        # running stack. So a local checkout always refreshes.
+        if ($script:RepoDir) {
+            Write-Say 'This is a local checkout (install-local.ps1), so it is always'
+            Write-Say 'refreshed from the files on disk rather than compared to a'
+            Write-Say 'published version.'
+            Write-Say ''
+            if (-not (Confirm-YesNo 'Rebuild from the local checkout and restart?' $true)) {
+                Write-Say ''
+                Write-Say 'Left alone. To manage the existing server:'
+                Write-Say "    cd `"$($script:InstallDir)`""
+                Write-Say '    docker compose ps'
+                throw (New-Object System.OperationCanceledException 'user declined')
+            }
+            Write-Say ''
+            Write-Say 'Refreshing from the local checkout.'
+            # Falls through on purpose -- see the comment a few lines below.
+        } else {
+
         $have = Get-InstalledVersion
         $new  = Get-PublishedVersion
         if ($have) { Write-Say "  This server:   $have" }
@@ -1401,6 +1426,7 @@ function Get-Stack {
                 throw (New-Object System.OperationCanceledException 'user declined')
             }
             return
+        }
         }
     }
 
