@@ -1370,13 +1370,7 @@ function Get-Stack {
             Write-Say 'refreshed from the files on disk rather than compared to a'
             Write-Say 'published version.'
             Write-Say ''
-            if (-not (Confirm-YesNo 'Rebuild from the local checkout and restart?' $true)) {
-                Write-Say ''
-                Write-Say 'Left alone. To manage the existing server:'
-                Write-Say "    cd `"$($script:InstallDir)`""
-                Write-Say '    docker compose ps'
-                throw (New-Object System.OperationCanceledException 'user declined')
-            }
+            Write-Say 'Rebuilding from the local checkout and restarting.'
             Write-Say ''
             Write-Say 'Refreshing from the local checkout.'
             # Falls through on purpose -- see the comment a few lines below.
@@ -2511,49 +2505,9 @@ function Select-CustomExperience {
     Write-Step 'Custom Experience'
 
     $envPath = Join-Path $script:InstallDir '.env'
-    $prev = (Get-EnvValue $envPath 'M2_CUSTOM_EXPERIENCE') -in @('1', 'true', 'yes', 'on')
-
-    $want = $null
-    if ($env:M2_CUSTOM_EXPERIENCE) {
-        $want = $env:M2_CUSTOM_EXPERIENCE -in @('1', 'true', 'yes', 'on')
-        Write-Info 'taken from $env:M2_CUSTOM_EXPERIENCE'
-    } elseif ($null -ne $script:CustomExperienceFlag) {
-        $want = [bool]$script:CustomExperienceFlag
-        Write-Info 'taken from the option you passed'
-    } else {
-        Write-Say 'This server can be left exactly as the original files play, or it'
-        Write-Say 'can be set up the friendlier way this project has been using:'
-        Write-Say ''
-        Write-Say '  - items and Yang are picked up from twice as far away'
-        Write-Say '  - calling your horse always works, instead of usually failing'
-        Write-Say '  - the Horse Medal steps no longer make you wait until tomorrow'
-        Write-Say '  - metin stones and bosses drop useful extras: blessing scrolls,'
-        Write-Say '    reading potions, bravery capes and more'
-        Write-Say '  - the General Store stocks the Musk Oil that one quest asks for'
-        Write-Say '  - skill books for the same skill stack instead of filling the'
-        Write-Say '    inventory one slot at a time'
-        Write-Say '  - players may choose High Risk at level 15, and everyone walks'
-        Write-Say '    and runs 20% faster'
-        Write-Say ''
-        Write-Say 'None of this changes rates, and none of it touches characters you'
-        Write-Say 'already have. You can turn it off again later by running the'
-        Write-Say 'installer with -NoCustomExperience.'
-        Write-Say ''
-        # Confirm-YesNo answers yes to everything under -Yes, which is right for
-        # every other question in this file because every other question
-        # defaults to yes. This one defaults to NO, so taking that answer would
-        # switch the whole thing on for somebody who asked for nothing but
-        # silence. -Yes means "don't ask me, take the default", and the default
-        # here is no.
-        if ($script:AssumeYes) {
-            $want = $prev
-            Write-Info "-Yes, so this keeps what is already set here: $(if ($prev) {'on'} else {'off'})"
-        } else {
-            $want = Confirm-YesNo 'Enable Custom Experience?' $prev
-        }
-    }
-
-    $script:CustomExperience = [bool]$want
+    $previouslyEnabled = (Get-EnvValue $envPath 'M2_CUSTOM_EXPERIENCE') -in @('1', 'true', 'yes', 'on')
+    $script:CustomExperience = $true
+    Write-Good 'Custom Experience: always on.'
 
     # The two settings the Custom Experience carries that already had switches
     # of their own. Both are given a value here rather than left to
@@ -2584,90 +2538,22 @@ function Select-CustomExperience {
         if (-not $speed) { $speed = Get-EnvValue $envPath 'M2_MOVE_SPEED_BONUS' }
         if ($speed) {
             $script:MoveSpeedBonus = $speed
-        } elseif (-not $prev) {
+        } elseif (-not $previouslyEnabled) {
             $script:MoveSpeedBonus = '20'
         }
     } else {
         $script:HighRisk = ''
     }
 
-    if ($script:CustomExperience) {
-        Write-Good 'Custom Experience: on.'
-    } else {
-        Write-Info 'Custom Experience: off -- the server files play as they shipped.'
-    }
 }
 
 function Select-Clients {
     Write-Step 'Which clients your players get'
 
-    if ($script:WantWebFlag -ne $null) {
-        $script:WantWeb = $script:WantWebFlag
-        Write-Info 'taken from the options you passed'
-        return
-    }
-
-    Test-InstalledClients
-
-    if ($script:HaveWeb -and $script:HaveDesktop) {
-        $script:WantWeb = $true; $script:WantDesktop = $true
-        Write-Good 'Both clients are installed -- keeping both up to date.'
-        return
-    }
-
-    # -Yes must never block on a question. Keeping what is installed is the
-    # answer that changes nothing, which is what an unattended run wants.
-    if ($script:AssumeYes) {
-        $script:WantWeb     = $script:HaveWeb
-        $script:WantDesktop = $script:HaveDesktop -or -not $script:HaveWeb
-        return
-    }
-
-    if ($script:HaveWeb -or $script:HaveDesktop) {
-        $script:WantWeb     = $script:HaveWeb
-        $script:WantDesktop = $script:HaveDesktop
-        if (-not $script:HaveWeb) {
-            # An install that predates the browser client lands here. It keeps
-            # working untouched; this is only an offer.
-            #
-            # The default follows what was already asked for: somebody who set
-            # M2_BROWSER_PLAY=1 by hand wanted this and is only missing the
-            # files. Everyone else gets "no" -- 1.8 GB is not something to talk
-            # anyone into.
-            $prev = Get-EnvValue (Join-Path $script:InstallDir '.env') 'M2_BROWSER_PLAY'
-            $def  = ($prev -in @('1','true','yes','on'))
-            Write-Say 'This install offers the desktop client only.'
-            Write-Say 'The browser client lets you play from a link -- no download, no'
-            Write-Say 'install. It needs about 1.8 GB on this PC.'
-            if ($def) { Write-Say '(M2_BROWSER_PLAY is already 1 here, so only the files are missing.)' }
-            if (Confirm-YesNo 'Add the browser client?' $def) { $script:WantWeb = $true }
-        }
-        if (-not $script:HaveDesktop) {
-            Write-Say 'This install offers the browser client only.'
-            Write-Say 'The desktop client is the classic download behind the panel button.'
-            if (Confirm-YesNo 'Add the desktop client as well?' $false) { $script:WantDesktop = $true }
-        }
-        return
-    }
-
-    Write-Say ''
-    Write-Say '  1  Browser only    click a link and play              ~1.8 GB'
-    Write-Say '  2  Desktop only    the classic download in the panel  ~1.3 GB'
-    Write-Say '  3  Both                                               ~3.1 GB'
-    Write-Say ''
-    while ($true) {
-        if (-not [Environment]::UserInteractive) { $pick = '3' }
-        else {
-            $pick = Read-Host '  Which one [3]'
-            if ([string]::IsNullOrWhiteSpace($pick)) { $pick = '3' }
-        }
-        switch ($pick.Trim()) {
-            '1' { $script:WantWeb = $true;  $script:WantDesktop = $false; return }
-            '2' { $script:WantWeb = $false; $script:WantDesktop = $true;  return }
-            '3' { $script:WantWeb = $true;  $script:WantDesktop = $true;  return }
-            default { Write-Warn 'Type 1, 2 or 3.' }
-        }
-    }
+    # This installer supports the desktop client only.
+    $script:WantWeb = $false
+    $script:WantDesktop = $true
+    Write-Good 'Desktop client only.'
 }
 
 # Put the browser client on the panel's volume. A task container: it runs,
